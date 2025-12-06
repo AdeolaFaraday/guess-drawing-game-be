@@ -1,0 +1,104 @@
+syntax = 'proto3';
+
+package drawinggame;
+
+// Service for realtime drawing game communication
+service DrawingGameService {
+  // Bidirectional streaming for realtime events
+  rpc Connect(stream GameEvent) returns (stream GameEvent);
+}
+
+// User information
+message User {
+  string id = 1;
+  string userName = 2;
+  int32 points = 3;
+  string joinedAt = 4;
+}
+
+// Position for cursor
+message Position {
+  double x = 1;
+  double y = 2;
+}
+
+// Drawing segment
+message Segment {
+  double x0 = 1;
+  double y0 = 2;
+  double x1 = 3;
+  double y1 = 4;
+  string color = 5;
+  double width = 6;
+  double dpr = 7;
+}
+
+// Timer information
+message TimerInfo {
+  int32 remaining = 1;
+  int32 total = 2;
+}
+
+// Chat message
+message ChatMessage {
+  string id = 1;
+  string userName = 2;
+  string message = 3;
+  int64 timestamp = 4;
+  bool isCorrectGuess = 5;
+  int32 points = 6;
+  int32 position = 7;
+}
+
+// Correct guess info
+message CorrectGuess {
+  string userName = 1;
+  int32 points = 2;
+  int32 position = 3;
+  int32 totalCorrect = 4;
+}
+
+// Turn start info
+message TurnStart {
+  User drawer = 1;
+  int64 turnStartTime = 2;
+}
+
+// Word selected info
+message WordSelected {
+  string word = 1;
+  User drawer = 2;
+}
+
+// Join request
+message JoinRequest {
+  string room = 1;
+  string userName = 2;
+}
+
+// Different event types
+message GameEvent {
+  string room = 1;
+  string userId = 2;
+
+  oneof event {
+    // Client to server events
+    JoinRequest join = 3;
+    Segment segment = 4;
+    Position cursor = 5;
+    string clear = 6; // empty string
+    string wordSelect = 7;
+    string gameStart = 8; // empty string
+    string chatMessage = 9;
+
+    // Server to client events
+    repeated User usersUpdate = 10;
+    User userJoined = 11;
+    User userLeft = 12;
+    TurnStart turnStart = 13;
+    WordSelected wordSelected = 14;
+    TimerInfo timerUpdate = 15;
+    CorrectGuess guessCorrect = 16;
+    ChatMessage chatMessageResponse = 17;
+  }
+}
