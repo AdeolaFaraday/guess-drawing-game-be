@@ -24,6 +24,12 @@ const roomCorrectGuessers = new Map();
 // Track timer intervals by room
 const roomTimers = new Map();
 
+// Track turn order by room (user IDs in the order they joined)
+const roomTurnOrder = new Map();
+
+// Track current turn index by room
+const roomTurnIndex = new Map();
+
 // Utility: get room from query or default
 const getRoom = (socket) => socket.handshake.query.room || "default";
 
@@ -101,18 +107,53 @@ const startTimer = (room, durationSeconds = 60) => {
     roomTimers.set(room, interval);
 };
 
-// Utility: start a new turn by picking random drawer
+// Utility: start a new turn by picking next drawer in order
 const startNewTurn = (room) => {
     const users = Array.from(roomUsers.get(room).values());
     if (users.length === 0) return;
 
+    // Initialize turn order if not exists (order of first joining)
+    if (!roomTurnOrder.has(room)) {
+        roomTurnOrder.set(room, users.map(u => u.id));
+        roomTurnIndex.set(room, 0);
+    }
+
+    // Get current turn index, wrap around if needed
+    let currentIndex = roomTurnIndex.get(room) || 0;
+    const turnOrder = roomTurnOrder.get(room);
+
+    // Find the next valid user (still connected)
+    let nextDrawer = null;
+    let attempts = 0;
+    const maxAttempts = users.length;
+
+    while (!nextDrawer && attempts < maxAttempts) {
+        const userId = turnOrder[currentIndex];
+        nextDrawer = users.find(u => u.id === userId);
+
+        if (!nextDrawer) {
+            // User left, skip them
+            currentIndex = (currentIndex + 1) % turnOrder.length;
+            attempts++;
+        } else {
+            // Found valid drawer, update index for next turn
+            roomTurnIndex.set(room, (currentIndex + 1) % turnOrder.length);
+            break;
+        }
+    }
+
+    // Fallback to first available user if no valid drawer found
+    if (!nextDrawer) {
+        nextDrawer = users[0];
+        roomTurnIndex.set(room, 1 % users.length);
+    }
+
     // Clear any existing timer
     clearTimer(room);
 
-    const randomUser = users[Math.floor(Math.random() * users.length)];
     const game = initializeGame(room);
 
-    game.currentDrawer = randomUser.id;
+    game.currentDrawer = nextDrawer.id;
     game.currentWord = null;
     game.gameStarted = true;
     game.turnStartTime = Date.now();
@@ -122,11 +163,11 @@ const startNewTurn = (room) => {
 
     // Emit turn start event to all users in room
     io.to(room).emit("turn:start", {
-        drawer: randomUser,
+        drawer: nextDrawer,
         turnStartTime: game.turnStartTime
     });
 
-    console.log(`🎨 New turn started in room ${room}. Drawer: ${randomUser.userName}`);
+    console.log(`🎨 New turn started in room ${room}. Drawer: ${nextDrawer.userName} (orderly turn)`);
 };
 
 io.on("connection", (socket) => {
@@ -139,8 +180,15 @@ io.on("connection", (socket) => {
     }
 
     // Add user to room
+    const wasEmpty = roomUsers.get(room).size === 0;
     roomUsers.get(room).set(socket.id, userInfo);
     socket.join(room);
+
+    // If user joins after game has started, add them to turn order
+    if (roomTurnOrder.has(room) && !wasEmpty) {
+        const turnOrder = roomTurnOrder.get(room);
+        turnOrder.push(socket.id);
+    }
 
     console.log(`🔗 User ${userInfo.userName} (${socket.id}) connected to room: ${room}`);
 
